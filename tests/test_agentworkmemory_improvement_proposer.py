@@ -11,7 +11,8 @@ from agentworkmemory.integrations.improvement import (
     CodexProcessRunner,
     GitRevisionReader,
 )
-from agentworkmemory.services.curators.models import ReasoningEffort
+from agentworkmemory.integrations.improvement.codex import improvement_prompt
+from agentworkmemory.services.curators.models import ContentAccess, ReasoningEffort
 from agentworkmemory.services.improvement import (
     HarnessComponent,
     ImprovementCandidateProposal,
@@ -99,6 +100,58 @@ def test_model_strings_are_nonblank_and_cli_propose_effort_is_typed() -> None:
     assert args.effort is ReasoningEffort.MAX
 
 
+def test_improve_generation_requires_experimental_acknowledgement(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    state = tmp_path / "state"
+    repository = tmp_path / "repository"
+
+    assert main(
+        (
+            "--state-dir",
+            str(state),
+            "improve",
+            "prepare",
+            "ses_one",
+            "--repo",
+            str(repository),
+            "--editable",
+            "src",
+        )
+    ) == 1
+    prepare_error = capsys.readouterr()
+    assert "pass --experimental" in prepare_error.err
+
+    assert main(
+        (
+            "--state-dir",
+            str(state),
+            "improve",
+            "propose",
+            "imp_one",
+        )
+    ) == 1
+    propose_error = capsys.readouterr()
+    assert "pass --experimental" in propose_error.err
+    assert not state.exists()
+
+
+def test_improve_propose_parser_types_experimental_and_remote_grant() -> None:
+    args = build_parser().parse_args(
+        (
+            "improve",
+            "propose",
+            "imp_run",
+            "--experimental",
+            "--allow-remote-content",
+        )
+    )
+
+    assert args.experimental
+    assert args.allow_remote_content
+
+
 def test_improve_settings_and_configure_are_canonical_cli_operations(
     tmp_path: Path,
     capsys,
@@ -176,6 +229,7 @@ def test_one_attempt_policy_override_is_recorded_without_mutating_defaults(
             run_id=run.run_id,
             model="one-shot-model",
             reasoning_effort=ReasoningEffort.MAX,
+            allow_remote_content=True,
         )
     )
 
@@ -183,12 +237,14 @@ def test_one_attempt_policy_override_is_recorded_without_mutating_defaults(
     assert proposer.calls[0][1] == ImprovementProposerPolicy(
         model="one-shot-model",
         reasoning_effort=ReasoningEffort.MAX,
+        allow_remote_content=True,
     )
     assert app.config.improvement_proposer.model == "durable-model"
     assert app.config.improvement_proposer.reasoning_effort is ReasoningEffort.HIGH
     attempt = app.improvement.attempts(run.run_id)[0]
     assert attempt.policy.model == "one-shot-model"
     assert attempt.policy.reasoning_effort is ReasoningEffort.MAX
+    assert attempt.policy.allow_remote_content is True
     assert attempt.state is ImprovementProposalAttemptState.SUCCEEDED
 
 
@@ -289,6 +345,7 @@ def test_attempt_manifest_keeps_identity_and_effective_policy_immutable(
     policy = ImprovementProposerPolicy(
         model="manifest-model",
         reasoning_effort=ReasoningEffort.XHIGH,
+        allow_remote_content=True,
     )
     attempt = app.improvement.start_attempt(run.run_id, policy)
     manifest_path = (
@@ -305,8 +362,10 @@ def test_attempt_manifest_keeps_identity_and_effective_policy_immutable(
         "runtime": "codex",
         "model": "manifest-model",
         "reasoning_effort": "xhigh",
+        "allow_remote_content": True,
     }
     assert Path(manifest["worktree"]) == attempt.worktree
+    assert attempt.policy.allow_remote_content
 
     with pytest.raises(ValueError, match="policy is immutable"):
         app.improvement.store.update_attempt(
@@ -319,6 +378,45 @@ def test_attempt_manifest_keeps_identity_and_effective_policy_immutable(
                 }
             )
         )
+
+
+def test_old_attempt_manifest_loads_with_remote_grant_denied_by_default(
+    tmp_path: Path,
+) -> None:
+    repository, _ = isolated_git_repository(tmp_path)
+    app = create_app(AgentWorkMemoryConfig(state_dir=tmp_path / "state"))
+    session = app.sessions.add_manual_note("metadata", title="old manifest")
+    run = app.improve_harness.prepare(
+        PrepareImprovementRun(
+            session_ids=(session.session_id,),
+            repository=repository,
+            editable_paths=(Path("src"),),
+        )
+    )
+    attempt = app.improvement.start_attempt(
+        run.run_id,
+        ImprovementProposerPolicy(
+            model="old-manifest-model",
+            reasoning_effort=ReasoningEffort.HIGH,
+        ),
+    )
+    manifest_path = (
+        app.config.state_dir
+        / "improvement"
+        / "runs"
+        / run.run_id
+        / "attempts"
+        / attempt.attempt_id
+        / "manifest.json"
+    )
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    del manifest["policy"]["allow_remote_content"]
+    manifest_path.write_text(json.dumps(manifest) + "\n", encoding="utf-8")
+
+    loaded = app.improvement.store.get_attempt(run.run_id, attempt.attempt_id)
+
+    assert loaded is not None
+    assert loaded.policy.allow_remote_content is False
 
 
 def proposal(changed_path: Path) -> ImprovementCandidateProposal:
@@ -363,12 +461,143 @@ def run_git(repository: Path, *arguments: str) -> None:
     )
 
 
+def test_selected_local_codex_rejected_before_process_with_remote_grant(
+    tmp_path: Path,
+) -> None:
+    repository, _ = isolated_git_repository(tmp_path)
+    process_calls = 0
+
+    def fake_codex(command, **kwargs):
+        nonlocal process_calls
+        process_calls += 1
+        raise AssertionError("the Codex process must not be invoked")
+
+    proposer = CodexImprovementProposer(
+        process=CodexProcessRunner(
+            executable="codex-test",
+            run_process=fake_codex,
+        )
+    )
+    app = create_app(
+        AgentWorkMemoryConfig(state_dir=tmp_path / "state"),
+        improvement_proposer=proposer,
+    )
+    session = app.sessions.add_manual_note(
+        "SELECTED LOCAL BODY",
+        title="selected local",
+    )
+    run = app.improve_harness.prepare(
+        PrepareImprovementRun(
+            session_ids=(session.session_id,),
+            repository=repository,
+            content_access=ContentAccess.SELECTED_LOCAL,
+            editable_paths=(Path("src"),),
+        )
+    )
+
+    with pytest.raises(ValueError, match="selected-local"):
+        app.improve_harness.propose(
+            ProposeImprovement(
+                run_id=run.run_id,
+                allow_remote_content=True,
+            )
+        )
+
+    assert process_calls == 0
+    assert app.improvement.attempts(run.run_id) == ()
+
+
+def test_direct_codex_call_rechecks_selected_local_destination_guard(
+    tmp_path: Path,
+) -> None:
+    repository, _ = isolated_git_repository(tmp_path)
+    app = create_app(AgentWorkMemoryConfig(state_dir=tmp_path / "state"))
+    session = app.sessions.add_manual_note("SELECTED LOCAL BODY", title="direct")
+    run = app.improve_harness.prepare(
+        PrepareImprovementRun(
+            session_ids=(session.session_id,),
+            repository=repository,
+            content_access=ContentAccess.SELECTED_LOCAL,
+            editable_paths=(Path("src"),),
+        )
+    )
+    attempt = app.improvement.start_attempt(
+        run.run_id,
+        ImprovementProposerPolicy(
+            model="direct-model",
+            reasoning_effort=ReasoningEffort.HIGH,
+            allow_remote_content=True,
+        ),
+    )
+    process_calls = 0
+
+    def fake_codex(command, **kwargs):
+        nonlocal process_calls
+        process_calls += 1
+        raise AssertionError("the Codex process must not be invoked")
+
+    proposer = CodexImprovementProposer(
+        process=CodexProcessRunner(run_process=fake_codex)
+    )
+
+    with pytest.raises(ValueError, match="selected-local"):
+        proposer.propose(run, attempt, ())
+
+    assert process_calls == 0
+
+
+def test_body_bearing_remote_evidence_needs_explicit_grant_at_codex_boundary(
+    tmp_path: Path,
+) -> None:
+    repository, _ = isolated_git_repository(tmp_path)
+    app = create_app(AgentWorkMemoryConfig(state_dir=tmp_path / "state"))
+    session = app.sessions.add_manual_note("REMOTE BODY", title="future remote")
+    local_run = app.improve_harness.prepare(
+        PrepareImprovementRun(
+            session_ids=(session.session_id,),
+            repository=repository,
+            content_access=ContentAccess.SELECTED_LOCAL,
+            editable_paths=(Path("src"),),
+        )
+    )
+    remote_body_run = local_run.model_copy(
+        update={"content_access": ContentAccess.SELECTED_REMOTE}
+    )
+    attempt = app.improvement.start_attempt(
+        local_run.run_id,
+        ImprovementProposerPolicy(
+            model="body-model",
+            reasoning_effort=ReasoningEffort.HIGH,
+        ),
+    )
+    process_calls = 0
+
+    def fake_codex(command, **kwargs):
+        nonlocal process_calls
+        process_calls += 1
+        raise AssertionError("the Codex process must not be invoked")
+
+    proposer = CodexImprovementProposer(
+        process=CodexProcessRunner(run_process=fake_codex)
+    )
+
+    with pytest.raises(ValueError, match="allow_remote_content"):
+        proposer.propose(remote_body_run, attempt, ())
+    with pytest.raises(ValueError, match="allow_remote_content"):
+        improvement_prompt(remote_body_run, attempt, ())
+
+    assert process_calls == 0
+
+
 def test_codex_proposer_uses_explicit_sandbox_policy_and_observed_paths(
     tmp_path: Path,
 ) -> None:
     repository, base_revision = isolated_git_repository(tmp_path)
     app = create_app(AgentWorkMemoryConfig(state_dir=tmp_path / "state"))
-    session = app.sessions.add_manual_note("prepared evidence", title="Codex")
+    session = app.sessions.add_manual_note(
+        "PRIVATE CODE BODY SHOULD NOT TRAVEL",
+        title="Codex",
+    )
     run = app.improve_harness.prepare(
         PrepareImprovementRun(
             session_ids=(session.session_id,),
@@ -427,6 +656,7 @@ def test_codex_proposer_uses_explicit_sandbox_policy_and_observed_paths(
     assert "mcp_servers={}" in config_values
     assert "--output-schema" in command
     assert kwargs["cwd"] == attempt.worktree
+    assert b"PRIVATE CODE BODY SHOULD NOT TRAVEL" not in kwargs["input"]
     assert "--add-dir" not in command
     assert "--skip-git-repo-check" not in command
     assert result.changed_paths == (Path("src/app.py"),)

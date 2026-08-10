@@ -20,6 +20,7 @@ from agentworkmemory.services.improvement.models import (
     duplicate_evaluation_case_identities,
     require_paths_inside_surface,
 )
+from agentworkmemory.services.improvement.policy import evidence_has_content
 
 SAFE_STORE_IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
@@ -365,14 +366,6 @@ def store_identifier(value: str) -> str:
     if not SAFE_STORE_IDENTIFIER.fullmatch(value):
         raise ValueError("improvement persistence identifiers must be safe path names")
     return value
-
-
-def evidence_has_content(evidence: tuple[ImprovementEvidence, ...]) -> bool:
-    return any(
-        event.content is not None
-        for selection in evidence
-        for event in selection.events
-    )
 
 
 def atomic_write_text(path: Path, content: str, root: Path) -> None:

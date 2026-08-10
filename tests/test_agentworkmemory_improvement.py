@@ -503,6 +503,7 @@ def test_improve_prepare_parser_requires_explicit_editable_surface() -> None:
             "src",
             "tests",
             "--allow-local-content",
+            "--experimental",
         )
     )
 
@@ -511,6 +512,7 @@ def test_improve_prepare_parser_requires_explicit_editable_surface() -> None:
     assert args.session_ids == ["ses_one"]
     assert args.editable == [[Path("src"), Path("tests")]]
     assert args.allow_local_content
+    assert args.experimental
 
 
 def test_git_revision_reader_uses_read_only_head_and_sanitizes_failures(

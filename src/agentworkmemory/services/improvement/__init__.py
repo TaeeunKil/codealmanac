@@ -15,6 +15,10 @@ from agentworkmemory.services.improvement.models import (
     ImprovementRun,
     ImprovementRunState,
 )
+from agentworkmemory.services.improvement.policy import (
+    evidence_has_content,
+    require_codex_content_policy,
+)
 from agentworkmemory.services.improvement.ports import (
     ImprovementEvaluator,
     ImprovementProposer,
@@ -45,4 +49,6 @@ __all__ = [
     "ImprovementStore",
     "RepositoryRevisionReader",
     "acceptance_gate",
+    "evidence_has_content",
+    "require_codex_content_policy",
 ]

@@ -23,6 +23,7 @@ from agentworkmemory.services.improvement.models import (
     ImprovementRun,
     require_paths_inside_surface,
 )
+from agentworkmemory.services.improvement.policy import require_codex_content_policy
 
 CODEX_TIMEOUT_SECONDS = 30 * 60
 AWM_ORIGINATOR = "awm_improvement"
@@ -126,12 +127,14 @@ class CodexImprovementProposer:
             raise ValueError("improvement attempt belongs to a different run")
         if attempt.base_revision != run.base_revision:
             raise ValueError("improvement attempt revision differs from its run")
+        require_codex_content_policy(run, attempt.policy)
         worktree = self.worktree_manager.create_detached(
             run.repository,
             attempt.worktree,
             attempt.base_revision,
         )
         validate_editable_surface(worktree, run.editable_paths)
+        require_codex_content_policy(run, attempt.policy)
         proposal = self.process.run(
             improvement_prompt(run, attempt, previous_attempts),
             cwd=worktree,
@@ -231,8 +234,10 @@ def improvement_prompt(
     attempt: ImprovementProposalAttempt,
     previous_attempts: tuple[ImprovementProposalAttempt, ...],
 ) -> str:
+    require_codex_content_policy(run, attempt.policy)
     evidence = tuple(
-        selection.model_dump(mode="json") for selection in run.evidence
+        selection.model_dump(mode="json", exclude_none=True)
+        for selection in run.evidence
     )
     previous = tuple(
         {

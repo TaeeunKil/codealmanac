@@ -31,6 +31,7 @@ class ImprovementProposerPolicy(AgentWorkMemoryModel):
     runtime: Literal["codex"] = "codex"
     model: str
     reasoning_effort: ReasoningEffort
+    allow_remote_content: bool = False
 
     @field_validator("model")
     @classmethod

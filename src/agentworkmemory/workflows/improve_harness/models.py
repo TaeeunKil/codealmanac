@@ -49,6 +49,7 @@ class ProposeImprovement(AgentWorkMemoryModel):
     run_id: ImprovementIdentifier
     model: str | None = None
     reasoning_effort: ReasoningEffort | None = None
+    allow_remote_content: bool = False
 
     @field_validator("model")
     @classmethod

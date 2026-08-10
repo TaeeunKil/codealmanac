@@ -189,3 +189,22 @@ conversation.
   and `AWM Sync` / `AWM Auto Distill`.
 - Slices: plan → build → review → fix → next. The review pass is where latent
   bugs surface; don't collapse it.
+
+## 7. Experimental improvement candidate generation
+
+`awm improve prepare` and `awm improve propose` are experimental candidate
+generation commands. Each invocation requires the explicit `--experimental`
+acknowledgement; that acknowledgement is not persisted and does not grant
+model, budget, or content access.
+
+This surface prepares evidence and can leave a proposed code candidate in a
+detached worktree for inspection. It is not a completed self-improvement loop:
+there is no automatic evaluation, promotion, merge, push, or live dogfood.
+Use `awm improve settings`, `list`, and `show` for inspection without the
+acknowledgement.
+
+Codex is a remote destination. Metadata-only evidence is the default and can
+be proposed without a content grant. Body-bearing evidence requires the
+one-attempt `awm improve propose RUN_ID --experimental --allow-remote-content`
+grant. Selected-local evidence cannot be upgraded for Codex, even when that
+flag is supplied.

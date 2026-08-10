@@ -9,6 +9,7 @@ from agentworkmemory.services.improvement.models import (
     ImprovementProposerPolicy,
     ImprovementRun,
 )
+from agentworkmemory.services.improvement.policy import require_codex_content_policy
 from agentworkmemory.services.improvement.ports import (
     ImprovementEvaluator,
     ImprovementProposer,
@@ -88,7 +89,9 @@ class ImproveHarnessWorkflow:
             self.proposer_settings,
             model=request.model,
             effort=request.reasoning_effort,
+            allow_remote_content=request.allow_remote_content,
         )
+        require_codex_content_policy(run, policy)
         attempt = self.improvement.start_attempt(run.run_id, policy)
         try:
             proposal = self.proposer.propose(run, attempt, previous_attempts)
@@ -168,12 +171,14 @@ def resolve_policy(
     *,
     model: str | None = None,
     effort: ReasoningEffort | None = None,
+    allow_remote_content: bool = False,
 ) -> ImprovementProposerPolicy:
     return ImprovementProposerPolicy(
         model=defaults.model if model is None else model,
         reasoning_effort=(
             defaults.reasoning_effort if effort is None else effort
         ),
+        allow_remote_content=allow_remote_content,
     )
 
 
