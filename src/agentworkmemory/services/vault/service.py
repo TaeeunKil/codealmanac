@@ -70,6 +70,7 @@ class VaultService:
         configured = AgentWorkMemoryConfig(
             state_dir=self.config.state_dir,
             vault_path=vault_path,
+            improvement_proposer=self.config.improvement_proposer,
         )
         save_config(configured)
         self.config = configured

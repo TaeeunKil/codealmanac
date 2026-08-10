@@ -6,6 +6,7 @@ from agentworkmemory.database import open_database
 from agentworkmemory.services.sessions.models import (
     AgentEvent,
     AgentEventKind,
+    AgentEventMetadata,
     AgentSession,
     CollectorCursor,
     SessionState,
@@ -156,6 +157,20 @@ class SessionsStore:
                 (session_id,),
             ).fetchall()
         return tuple(event_from_row(row) for row in rows)
+
+    def event_metadata_for(self, session_id: str) -> tuple[AgentEventMetadata, ...]:
+        with open_database(self.database_path) as connection:
+            rows = connection.execute(
+                """
+                SELECT event_id, session_id, sequence, kind, role, label,
+                       occurred_at, source_line, created_at
+                FROM agent_events
+                WHERE session_id = ?
+                ORDER BY sequence, source_line, event_id
+                """,
+                (session_id,),
+            ).fetchall()
+        return tuple(event_metadata_from_row(row) for row in rows)
 
     def cursor_for(self, source_id: str) -> CollectorCursor | None:
         with open_database(self.database_path) as connection:
@@ -325,6 +340,24 @@ def session_from_row(row: object) -> AgentSession:
         distill_runtime=row["distill_runtime"],
         created_at=datetime.fromisoformat(row["created_at"]),
         updated_at=datetime.fromisoformat(row["updated_at"]),
+    )
+
+
+def event_metadata_from_row(row: object) -> AgentEventMetadata:
+    return AgentEventMetadata(
+        event_id=row["event_id"],
+        session_id=row["session_id"],
+        sequence=row["sequence"],
+        kind=AgentEventKind(row["kind"]),
+        role=row["role"],
+        label=row["label"],
+        occurred_at=(
+            datetime.fromisoformat(row["occurred_at"])
+            if row["occurred_at"] is not None
+            else None
+        ),
+        source_line=row["source_line"],
+        created_at=datetime.fromisoformat(row["created_at"]),
     )
 
 

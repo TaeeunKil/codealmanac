@@ -9,6 +9,10 @@ from agentworkmemory.integrations.curators import (
     OllamaCuratorAdapter,
     YokeCuratorAdapter,
 )
+from agentworkmemory.integrations.improvement import (
+    CodexImprovementProposer,
+    GitRevisionReader,
+)
 from agentworkmemory.integrations.processes import PsutilActivityProcessProbe
 from agentworkmemory.integrations.remotes import SshRemoteSnapshotAdapter
 from agentworkmemory.integrations.transcripts import (
@@ -35,6 +39,8 @@ from agentworkmemory.services.curators.service import CuratorsService
 from agentworkmemory.services.diagnostics import DiagnosticsService
 from agentworkmemory.services.distillation.service import DistillationService
 from agentworkmemory.services.distillation.store import DistillationStore
+from agentworkmemory.services.improvement import ImprovementService, ImprovementStore
+from agentworkmemory.services.improvement.ports import ImprovementProposer
 from agentworkmemory.services.remotes.ports import RemoteSnapshotAdapter
 from agentworkmemory.services.remotes.service import RemotesService
 from agentworkmemory.services.remotes.store import RemoteStore
@@ -58,6 +64,7 @@ from agentworkmemory.workflows.distill import DistillSessionsWorkflow
 from agentworkmemory.workflows.distill.coordination import DistillCoordination
 from agentworkmemory.workflows.import_legacy import ImportLegacyAlmanacWorkflow
 from agentworkmemory.workflows.import_records import ImportAgentRecordsWorkflow
+from agentworkmemory.workflows.improve_harness import ImproveHarnessWorkflow
 from agentworkmemory.workflows.remote_sync import SyncRemoteRecordsWorkflow
 from agentworkmemory.workflows.setup import SetupAgentWorkMemoryWorkflow
 from agentworkmemory.workflows.sync import SyncAgentRecordsWorkflow
@@ -83,6 +90,9 @@ class AgentWorkMemory:
         distillation: DistillationService,
         import_records: ImportAgentRecordsWorkflow,
         import_legacy: ImportLegacyAlmanacWorkflow,
+        improvement: ImprovementService,
+        improvement_proposer: ImprovementProposer,
+        improve_harness: ImproveHarnessWorkflow,
         remotes: RemotesService,
         remote_sync: SyncRemoteRecordsWorkflow,
         search: SearchService,
@@ -109,6 +119,9 @@ class AgentWorkMemory:
         self.distillation = distillation
         self.import_records = import_records
         self.import_legacy = import_legacy
+        self.improvement = improvement
+        self.improvement_proposer = improvement_proposer
+        self.improve_harness = improve_harness
         self.remotes = remotes
         self.remote_sync = remote_sync
         self.search = search
@@ -135,12 +148,27 @@ def create_app(
     remote_adapter: RemoteSnapshotAdapter | None = None,
     vault_repository_adapter: VaultRepositoryAdapter | None = None,
     ollama_url: str | None = None,
+    improvement_proposer: ImprovementProposer | None = None,
 ) -> AgentWorkMemory:
     resolved = config or load_config()
     with open_database(resolved.database_path):
         pass
     store = SessionsStore(resolved.database_path)
     sessions = SessionsService(store)
+    improvement = ImprovementService(
+        ImprovementStore(resolved.state_dir / "improvement")
+    )
+    improve_harness = ImproveHarnessWorkflow(
+        sessions,
+        improvement,
+        GitRevisionReader(),
+        proposer=(
+            improvement_proposer
+            if improvement_proposer is not None
+            else CodexImprovementProposer()
+        ),
+        proposer_settings=resolved.improvement_proposer,
+    )
     vault = VaultService(resolved)
     wiki = WikiCatalogService(vault, sessions)
     collectors = (
@@ -277,6 +305,9 @@ def create_app(
         distillation=distillation,
         import_records=import_records,
         import_legacy=import_legacy,
+        improvement=improvement,
+        improvement_proposer=improve_harness.proposer,
+        improve_harness=improve_harness,
         remotes=remotes,
         remote_sync=remote_sync,
         search=search,

@@ -20,6 +20,7 @@ from agentworkmemory.services.diagnostics.models import DiagnosticStatus
 from agentworkmemory.services.distillation.outcomes import (
     summarize_session_outcomes,
 )
+from agentworkmemory.services.improvement.models import ImprovementRun
 from agentworkmemory.services.sessions.models import (
     LOCAL_TRANSCRIPT_PROVIDERS,
     SSH_REMOTE_TRANSCRIPT_PROVIDERS,
@@ -27,11 +28,15 @@ from agentworkmemory.services.sessions.models import (
 from agentworkmemory.services.synchronization.models import SyncReceipt, SyncStatus
 from agentworkmemory.services.translations import Locale
 from agentworkmemory.services.vault_repository.service import DEFAULT_COMMIT_MESSAGE
-from agentworkmemory.settings import load_config
+from agentworkmemory.settings import configure_improvement_proposer, load_config
 from agentworkmemory.workflows.auto_distill import AutoDistillRunState
 from agentworkmemory.workflows.collect import CollectAgentRecords
 from agentworkmemory.workflows.distill import DistillSessions
 from agentworkmemory.workflows.import_legacy import ImportLegacyAlmanac
+from agentworkmemory.workflows.improve_harness import (
+    PrepareImprovementRun,
+    ProposeImprovement,
+)
 from agentworkmemory.workflows.remote_sync import SyncRemoteRecords
 from agentworkmemory.workflows.setup import SetupAgentWorkMemory
 from agentworkmemory.workflows.sync import SyncAgentRecords
@@ -316,6 +321,65 @@ def build_parser() -> argparse.ArgumentParser:
         help="Allow selected session event bodies to be sent to the runtime.",
     )
 
+    improve = commands.add_parser(
+        "improve",
+        help="Prepare and inspect evidence-grounded harness improvements.",
+    )
+    improve_commands = improve.add_subparsers(
+        dest="improve_command",
+        required=True,
+    )
+    improve_prepare = improve_commands.add_parser(
+        "prepare",
+        help="Prepare an immutable improvement run from selected sessions.",
+    )
+    improve_prepare.add_argument("session_ids", nargs="+")
+    improve_prepare.add_argument(
+        "--repo",
+        type=Path,
+        default=Path.cwd(),
+        help="Repository checkout whose current revision anchors the run.",
+    )
+    improve_prepare.add_argument(
+        "--allow-local-content",
+        action="store_true",
+        help="Copy bodies only from the explicitly selected local sessions.",
+    )
+    improve_prepare.add_argument(
+        "--editable",
+        type=Path,
+        action="append",
+        nargs="+",
+        required=True,
+        help="Relative editable path; repeat or provide several paths explicitly.",
+    )
+    improve_commands.add_parser(
+        "settings",
+        help="Show the durable Codex improvement proposer defaults.",
+    )
+    improve_configure = improve_commands.add_parser(
+        "configure",
+        help="Update durable Codex improvement proposer defaults.",
+    )
+    improve_configure.add_argument("--model")
+    improve_configure.add_argument("--effort", type=parse_reasoning_effort)
+    improve_propose = improve_commands.add_parser(
+        "propose",
+        help="Create one candidate improvement in a detached Git worktree.",
+    )
+    improve_propose.add_argument("run_id")
+    improve_propose.add_argument("--model")
+    improve_propose.add_argument("--effort", type=parse_reasoning_effort)
+    improve_commands.add_parser(
+        "list",
+        help="List prepared and evaluated improvement runs.",
+    )
+    improve_show = improve_commands.add_parser(
+        "show",
+        help="Show one improvement run without retained event bodies.",
+    )
+    improve_show.add_argument("run_id")
+
     translate = commands.add_parser(
         "translate",
         help="Create derived Korean or English Wiki representations.",
@@ -494,6 +558,8 @@ def dispatch(args: argparse.Namespace, app: AgentWorkMemory) -> int:
         else:
             print("No durable Wiki pages changed.")
         return 0
+    if args.command == "improve":
+        return dispatch_improve(args, app)
     if args.command == "translate":
         app.vault.require_path()
         paths = translation_paths(args, app)
@@ -697,6 +763,110 @@ def sync_request(args: argparse.Namespace) -> SyncAgentRecords:
         providers=tuple(args.providers or LOCAL_TRANSCRIPT_PROVIDERS),
         home=args.home.expanduser().resolve(),
         include_content=args.include_content,
+    )
+
+
+def dispatch_improve(args: argparse.Namespace, app: AgentWorkMemory) -> int:
+    if args.improve_command == "prepare":
+        editable_paths = tuple(
+            path
+            for group in args.editable
+            for path in group
+        )
+        request = PrepareImprovementRun(
+            session_ids=tuple(args.session_ids),
+            repository=args.repo.expanduser().resolve(),
+            content_access=(
+                ContentAccess.SELECTED_LOCAL
+                if args.allow_local_content
+                else ContentAccess.METADATA_ONLY
+            ),
+            editable_paths=editable_paths,
+        )
+        run = app.improve_harness.prepare(request)
+        print(f"Prepared improvement run {run.run_id}.")
+        print_improvement_run_summary(run)
+        return 0
+    if args.improve_command == "settings":
+        settings = app.config.improvement_proposer
+        print(f"model: {settings.model}")
+        print(f"reasoning effort: {settings.reasoning_effort.value}")
+        return 0
+    if args.improve_command == "configure":
+        config = configure_improvement_proposer(
+            app.config,
+            model=args.model,
+            reasoning_effort=args.effort,
+        )
+        settings = config.improvement_proposer
+        print("Improvement proposer settings updated.")
+        print(f"model: {settings.model}")
+        print(f"reasoning effort: {settings.reasoning_effort.value}")
+        return 0
+    if args.improve_command == "propose":
+        candidate = app.improve_harness.propose(
+            ProposeImprovement(
+                run_id=args.run_id,
+                model=args.model,
+                reasoning_effort=args.effort,
+            )
+        )
+        print(f"Proposed improvement candidate {candidate.candidate_id}.")
+        print(
+            "changed: "
+            + ", ".join(path.as_posix() for path in candidate.changed_paths)
+        )
+        return 0
+    if args.improve_command == "list":
+        runs = app.improve_harness.list()
+        if not runs:
+            print("No improvement runs.")
+            return 0
+        for run in runs:
+            print(
+                f"{run.run_id}  {run.state.value:<18} "
+                f"{len(run.evidence)} evidence session(s)  "
+                f"base {run.base_revision}"
+            )
+        return 0
+    if args.improve_command == "show":
+        details = app.improve_harness.show(args.run_id)
+        print_improvement_run_summary(details.run)
+        print("candidates:")
+        if not details.candidates:
+            print("  none")
+        for summary in details.candidates:
+            candidate = summary.candidate
+            print(f"  {candidate.candidate_id}  {candidate.component.value}")
+            print(
+                "    changed: "
+                + ", ".join(path.as_posix() for path in candidate.changed_paths)
+            )
+            if summary.evaluation is None:
+                print("    evaluation: pending")
+            else:
+                print(
+                    f"    evaluation: {summary.evaluation.decision.value}"
+                )
+        return 0
+    raise ValueError(f"unsupported improve command: {args.improve_command}")
+
+
+def print_improvement_run_summary(run: ImprovementRun) -> None:
+    print(f"run: {run.run_id}")
+    print(f"state: {run.state.value}")
+    print(f"repository: {run.repository}")
+    print(f"base revision: {run.base_revision}")
+    print(f"content access: {run.content_access.value}")
+    print(f"evidence: {len(run.evidence)} session(s)")
+    for evidence in run.evidence:
+        print(
+            f"  {evidence.session_id}  {evidence.provider}  "
+            f"{len(evidence.events)} event metadata record(s)"
+        )
+    print(
+        "editable: "
+        + ", ".join(path.as_posix() for path in run.editable_paths)
     )
 
 

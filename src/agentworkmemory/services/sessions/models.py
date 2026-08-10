@@ -94,6 +94,33 @@ class AgentEvent(AgentWorkMemoryModel):
         return value
 
 
+class AgentEventMetadata(AgentWorkMemoryModel):
+    event_id: str
+    session_id: str
+    sequence: int
+    kind: AgentEventKind
+    role: str | None = None
+    label: str
+    occurred_at: datetime | None = None
+    source_line: int
+    created_at: datetime
+
+    @field_validator("event_id", "session_id", "label")
+    @classmethod
+    def required_text(cls, value: str) -> str:
+        text = value.strip()
+        if not text:
+            raise ValueError("event metadata text fields must not be empty")
+        return text
+
+    @field_validator("sequence", "source_line")
+    @classmethod
+    def non_negative_number(cls, value: int) -> int:
+        if value < 0:
+            raise ValueError("event positions must be non-negative")
+        return value
+
+
 class CollectorCursor(AgentWorkMemoryModel):
     source_id: str
     provider: AgentProviderId

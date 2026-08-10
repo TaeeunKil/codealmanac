@@ -10,6 +10,7 @@ from agentworkmemory.services.sessions.distillation import (
 from agentworkmemory.services.sessions.models import (
     AgentEvent,
     AgentEventKind,
+    AgentEventMetadata,
     AgentProvider,
     AgentProviderId,
     AgentSession,
@@ -208,6 +209,10 @@ class SessionsService:
 
     def events(self, session_id: str) -> tuple[AgentEvent, ...]:
         return self.store.events_for(session_id)
+
+    def event_metadata(self, session_id: str) -> tuple[AgentEventMetadata, ...]:
+        self.get(session_id)
+        return self.store.event_metadata_for(session_id)
 
     def cursor_for(self, source_id: str) -> CollectorCursor | None:
         return self.store.cursor_for(source_id)
