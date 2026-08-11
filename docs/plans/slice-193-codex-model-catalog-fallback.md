@@ -13,6 +13,9 @@ required `base_instructions` field.
   filling missing `base_instructions` with a stable minimal instruction.
 - Remove Pydantic-only string `format` metadata from the structured-output
   schema before passing it to Codex strict JSON schema validation.
+- Run the proposer with user config, app/plugin connectors, multi-agent
+  collaboration, and code mode disabled; the proposer needs only its bounded
+  shell/worktree surface.
 - Retry the same bounded Codex invocation at most once, then preserve the
   normal sanitized failure behavior.
 - Remove the temporary catalog after the invocation.

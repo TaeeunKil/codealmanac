@@ -31,6 +31,12 @@ AWM_ORIGINATOR = "awm_improvement"
 MODEL_CATALOG_BASE_INSTRUCTIONS = (
     "You are Codex, a coding agent. Be precise, safe, and helpful."
 )
+MODEL_CATALOG_INSTRUCTIONS_TEMPLATE = (
+    "You are the Agent Work Memory improvement proposer. "
+    "Work as one bounded coding agent in the prepared worktree. "
+    "Follow the user prompt's scope and return only the requested structured "
+    "candidate proposal."
+)
 
 
 class CodexProcess(Protocol):
@@ -196,6 +202,15 @@ def codex_command(
         executable,
         "exec",
         "--json",
+        "--ignore-user-config",
+        "--disable",
+        "apps",
+        "--disable",
+        "plugins",
+        "--disable",
+        "multi_agent",
+        "--disable",
+        "code_mode",
         "--cd",
         str(cwd),
         "--model",
@@ -260,6 +275,14 @@ def model_catalog_override(environment: dict[str, str]) -> Path | None:
             return None
         repaired = dict(model)
         repaired.setdefault("base_instructions", MODEL_CATALOG_BASE_INSTRUCTIONS)
+        model_messages = repaired.get("model_messages")
+        normalized_messages = (
+            dict(model_messages) if isinstance(model_messages, dict) else {}
+        )
+        normalized_messages["instructions_template"] = (
+            MODEL_CATALOG_INSTRUCTIONS_TEMPLATE
+        )
+        repaired["model_messages"] = normalized_messages
         repaired_models.append(repaired)
     catalog["models"] = repaired_models
     with tempfile.NamedTemporaryFile(

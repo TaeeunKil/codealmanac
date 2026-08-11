@@ -643,10 +643,22 @@ def test_codex_proposer_uses_explicit_sandbox_policy_and_observed_paths(
     result = proposer.propose(run, attempt, ())
 
     command, kwargs = calls[0]
-    assert command[0:4] == ("codex-test", "exec", "--json", "--cd")
+    assert command[0:4] == (
+        "codex-test",
+        "exec",
+        "--json",
+        "--ignore-user-config",
+    )
     assert "--model" in command
     assert command[command.index("--model") + 1] == "experiment-model"
     assert command[command.index("--sandbox") + 1] == "workspace-write"
+    assert "--ignore-user-config" in command
+    disabled_features = [
+        command[index + 1]
+        for index, value in enumerate(command[:-1])
+        if value == "--disable"
+    ]
+    assert disabled_features == ["apps", "plugins", "multi_agent", "code_mode"]
     config_values = [
         command[index + 1]
         for index, value in enumerate(command[:-1])
@@ -842,6 +854,7 @@ def test_codex_model_cache_shape_failure_retries_with_temporary_catalog(
     )
     monkeypatch.setenv("CODEX_HOME", str(codex_home))
     calls: list[tuple[str, ...]] = []
+    captured_catalog: dict[str, object] = {}
 
     def fake_codex(command, **kwargs):
         calls.append(tuple(command))
@@ -855,6 +868,17 @@ def test_codex_model_cache_shape_failure_retries_with_temporary_catalog(
                     b"`base_instructions` at line 94 column 5"
                 ),
             )
+        catalog_config = next(
+            value
+            for index, value in enumerate(command[:-1])
+            if value == "--config"
+            for value in (command[index + 1],)
+            if value.startswith("model_catalog_json=")
+        )
+        catalog_path = Path(json.loads(catalog_config.split("=", 1)[1]))
+        captured_catalog.update(
+            json.loads(catalog_path.read_text(encoding="utf-8"))
+        )
         output = json.dumps(
             {
                 "type": "item.completed",
@@ -895,6 +919,11 @@ def test_codex_model_cache_shape_failure_retries_with_temporary_catalog(
     )
     catalog_path = Path(json.loads(catalog_config.split("=", 1)[1]))
     assert not catalog_path.exists()
+    model = captured_catalog["models"][0]
+    assert model["base_instructions"]
+    assert "one bounded coding agent" in model["model_messages"][
+        "instructions_template"
+    ]
 
 
 def test_codex_output_schema_removes_pydantic_path_format() -> None:
