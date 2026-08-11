@@ -11,7 +11,10 @@ from agentworkmemory.integrations.improvement import (
     CodexProcessRunner,
     GitRevisionReader,
 )
-from agentworkmemory.integrations.improvement.codex import improvement_prompt
+from agentworkmemory.integrations.improvement.codex import (
+    codex_output_schema,
+    improvement_prompt,
+)
 from agentworkmemory.services.curators.models import ContentAccess, ReasoningEffort
 from agentworkmemory.services.improvement import (
     HarnessComponent,
@@ -815,3 +818,98 @@ def test_codex_failure_is_bounded_and_does_not_retry(tmp_path: Path) -> None:
     assert "secret" not in str(error.value)
     assert "***@" in str(error.value)
     assert len(str(error.value)) < 4200
+
+
+def test_codex_model_cache_shape_failure_retries_with_temporary_catalog(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    codex_home = tmp_path / "codex-home"
+    codex_home.mkdir()
+    (codex_home / "models_cache.json").write_text(
+        json.dumps(
+            {
+                "models": [
+                    {
+                        "slug": "experiment-model",
+                        "display_name": "Experiment",
+                    }
+                ]
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    calls: list[tuple[str, ...]] = []
+
+    def fake_codex(command, **kwargs):
+        calls.append(tuple(command))
+        if len(calls) == 1:
+            return subprocess.CompletedProcess(
+                command,
+                1,
+                stdout=b"",
+                stderr=(
+                    b"failed to load models cache: missing field "
+                    b"`base_instructions` at line 94 column 5"
+                ),
+            )
+        output = json.dumps(
+            {
+                "type": "item.completed",
+                "item": {
+                    "type": "agent_message",
+                    "text": json.dumps(
+                        proposal(Path("src/model-claimed.py")).model_dump(
+                            mode="json"
+                        )
+                    ),
+                },
+            }
+        ).encode("utf-8")
+        return subprocess.CompletedProcess(command, 0, stdout=output, stderr=b"")
+
+    runner = CodexProcessRunner(
+        executable="codex-test",
+        run_process=fake_codex,
+    )
+    result = runner.run(
+        "Use the prepared evidence.",
+        cwd=tmp_path,
+        policy=ImprovementProposerPolicy(
+            model="experiment-model",
+            reasoning_effort=ReasoningEffort.XHIGH,
+        ),
+    )
+
+    assert result.changed_paths == (Path("src/model-claimed.py"),)
+    assert len(calls) == 2
+    fallback_configs = [
+        calls[1][index + 1]
+        for index, value in enumerate(calls[1][:-1])
+        if value == "--config"
+    ]
+    catalog_config = next(
+        value for value in fallback_configs if value.startswith("model_catalog_json=")
+    )
+    catalog_path = Path(json.loads(catalog_config.split("=", 1)[1]))
+    assert not catalog_path.exists()
+
+
+def test_codex_output_schema_removes_pydantic_path_format() -> None:
+    schema = codex_output_schema(
+        {
+            "properties": {
+                "changed_paths": {
+                    "items": {"type": "string", "format": "path"}
+                }
+            }
+        }
+    )
+
+    assert schema == {
+        "properties": {
+            "changed_paths": {"items": {"type": "string"}}
+        }
+    }
