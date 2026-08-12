@@ -164,8 +164,8 @@ conversation.
   (`%LOCALAPPDATA%\AgentWorkMemory` on Windows). The user-selected Markdown
   Vault is the durable, browseable knowledge layer.
 - Session capture is deterministic. AI is invoked only by explicit or
-  explicitly scheduled distillation, and external-content access remains an
-  explicit grant.
+  explicitly scheduled distillation, or by an explicit structural-review
+  proposal, and external-content access remains an explicit grant.
 - The composition root owns concrete collectors, schedulers, curator runtimes,
   and SSH adapters. Services depend on ports; workflows coordinate use cases.
 - The Vault source shape is:
@@ -190,18 +190,19 @@ conversation.
 - Slices: plan → build → review → fix → next. The review pass is where latent
   bugs surface; don't collapse it.
 
-## 7. Experimental improvement candidate generation
+## 7. Experimental structural review and patch proposal
 
-`awm improve prepare` and `awm improve propose` are experimental candidate
-generation commands. Each invocation requires the explicit `--experimental`
+`awm improve prepare` and `awm improve propose` are an experimental structural
+review surface. They prepare evidence and ask Codex to propose one patch in an
+isolated worktree. Each invocation requires the explicit `--experimental`
 acknowledgement; that acknowledgement is not persisted and does not grant
 model, budget, or content access.
 
 This surface prepares evidence and can leave a proposed code candidate in a
-detached worktree for inspection. It is not a completed self-improvement loop:
-there is no automatic evaluation, promotion, merge, push, or live dogfood.
-Use `awm improve settings`, `list`, and `show` for inspection without the
-acknowledgement.
+detached worktree for inspection. It is a **structural review and patch
+proposer**, not a completed self-improvement loop: there is no automatic
+evaluation, promotion, commit, merge, push, or live dogfood. Use `awm improve
+settings`, `list`, and `show` for inspection without the acknowledgement.
 
 Codex is a remote destination. Metadata-only evidence is the default and can
 be proposed without a content grant. Body-bearing evidence requires the

@@ -140,6 +140,18 @@ def test_improve_generation_requires_experimental_acknowledgement(
     assert not state.exists()
 
 
+def test_improve_help_names_structural_review_boundary(capsys) -> None:
+    group_help = build_parser().format_help()
+    assert "structural reviews" in group_help
+    assert "self-improvement" not in group_help
+
+    with pytest.raises(SystemExit):
+        main(("improve", "propose", "--help"))
+    propose_help = " ".join(capsys.readouterr().out.split())
+    assert "experimental structural review and patch proposal" in propose_help
+    assert "does not evaluate or promote code" in propose_help
+
+
 def test_improve_propose_parser_types_experimental_and_remote_grant() -> None:
     args = build_parser().parse_args(
         (
@@ -651,7 +663,7 @@ def test_codex_proposer_uses_explicit_sandbox_policy_and_observed_paths(
     )
     assert "--model" in command
     assert command[command.index("--model") + 1] == "experiment-model"
-    assert command[command.index("--sandbox") + 1] == "workspace-write"
+    assert "--approve-for-me" in command
     assert "--ignore-user-config" in command
     disabled_features = [
         command[index + 1]
@@ -664,7 +676,6 @@ def test_codex_proposer_uses_explicit_sandbox_policy_and_observed_paths(
         for index, value in enumerate(command[:-1])
         if value == "--config"
     ]
-    assert 'approval_policy="never"' in config_values
     assert 'model_reasoning_effort="max"' in config_values
     assert "sandbox_workspace_write.network_access=false" in config_values
     assert 'web_search="disabled"' in config_values

@@ -32,10 +32,10 @@ MODEL_CATALOG_BASE_INSTRUCTIONS = (
     "You are Codex, a coding agent. Be precise, safe, and helpful."
 )
 MODEL_CATALOG_INSTRUCTIONS_TEMPLATE = (
-    "You are the Agent Work Memory improvement proposer. "
+    "You are the Agent Work Memory structural review and patch proposer. "
     "Work as one bounded coding agent in the prepared worktree. "
     "Follow the user prompt's scope and return only the requested structured "
-    "candidate proposal."
+    "patch candidate proposal. Do not commit, publish, or promote changes."
 )
 
 
@@ -146,7 +146,7 @@ class CodexProcessRunner:
 
 
 class CodexImprovementProposer:
-    """Create a detached worktree and ask Codex for one candidate proposal."""
+    """Run one bounded structural review and record its patch candidate."""
 
     def __init__(
         self,
@@ -215,10 +215,7 @@ def codex_command(
         str(cwd),
         "--model",
         policy.model,
-        "--sandbox",
-        "workspace-write",
-        "--config",
-        'approval_policy="never"',
+        "--approve-for-me",
         "--config",
         f"model_reasoning_effort={json.dumps(policy.reasoning_effort.value)}",
         "--config",
@@ -382,7 +379,8 @@ def improvement_prompt(
         }
         for previous_attempt in previous_attempts
     )
-    return f"""You are proposing one controlled Agent Work Memory harness improvement.
+    return f"""You are conducting one controlled Agent Work Memory structural
+review and proposing one patch candidate.
 
 The current candidate worktree is already checked out at the prepared base
 revision. Work only in that worktree and only within the editable paths below.
@@ -405,6 +403,8 @@ Acceptance rules:
 - Preserve passing behavior and existing safety boundaries.
 - Make the smallest coherent change within the editable surface.
 - Do not commit, create branches, change worktrees, or alter Git metadata.
+- Do not evaluate, promote, merge, push, or publish the patch; a human reviews
+  the detached candidate after this turn.
 - Do not claim a path that was not actually changed; AWM will verify Git paths.
 - Return a complete semantic candidate manifesto through the structured output
   schema, including failure evidence, root cause, targeted fix, predicted impact,

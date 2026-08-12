@@ -2,6 +2,11 @@
 
 Date: 2026-08-11
 
+Status note (2026-08-12): the experimental surface is now described in the
+current manual and CLI as a **structural review and patch proposer**. The
+historical `improvement` type and state names remain unchanged for persistence
+compatibility; this does not promote it to a self-improvement loop.
+
 ## Executive conclusion
 
 Agent Work Memory has not yet completed a self-improvement loop.
@@ -103,8 +108,9 @@ The CLI offers `prepare`, `propose`, `list`, and `show`. There is no `evaluate`,
 `compare`, `review`, `promote`, `reject`, `cleanup`, or `reconcile`. No concrete
 `ImprovementEvaluator` exists outside tests.
 
-Recommendation: do not document or publish this as self-improvement. Rename it
-as an experimental harness-candidate generator until the full lifecycle exists.
+Recommendation: do not document or publish this as self-improvement. Describe
+it as an experimental structural review and patch proposer until the full
+lifecycle exists.
 
 ### 5. The editable surface is prematurely general
 
@@ -198,4 +204,3 @@ not “Codex can edit AWM.” It is:
 
 Until that statement is true, self-improvement is a proposal mechanism, not a
 learning system.
-

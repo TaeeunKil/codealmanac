@@ -323,7 +323,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     improve = commands.add_parser(
         "improve",
-        help="Manage experimental candidate generation and inspect retained runs.",
+        help=(
+            "Run experimental structural reviews, propose patches, and inspect "
+            "retained runs."
+        ),
     )
     improve_commands = improve.add_subparsers(
         dest="improve_command",
@@ -331,15 +334,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     improve_prepare = improve_commands.add_parser(
         "prepare",
-        help="Prepare evidence for experimental candidate generation.",
+        help="Prepare evidence for an experimental structural review.",
     )
     improve_prepare.add_argument("session_ids", nargs="+")
     improve_prepare.add_argument(
         "--experimental",
         action="store_true",
         help=(
-            "Acknowledge that this is experimental candidate generation, not a "
-            "completed self-improvement loop."
+            "Acknowledge that this is an experimental structural review and "
+            "patch proposal; it does not evaluate or promote code."
         ),
     )
     improve_prepare.add_argument(
@@ -363,25 +366,28 @@ def build_parser() -> argparse.ArgumentParser:
     )
     improve_commands.add_parser(
         "settings",
-        help="Inspect durable Codex proposer defaults for the experimental surface.",
+        help="Inspect durable Codex structural-review proposer defaults.",
     )
     improve_configure = improve_commands.add_parser(
         "configure",
-        help="Update durable Codex proposer defaults for experiments.",
+        help="Update durable Codex structural-review proposer defaults.",
     )
     improve_configure.add_argument("--model")
     improve_configure.add_argument("--effort", type=parse_reasoning_effort)
     improve_propose = improve_commands.add_parser(
         "propose",
-        help="Generate one experimental candidate in a detached Git worktree.",
+        help=(
+            "Ask Codex for one structural patch candidate in a detached Git "
+            "worktree."
+        ),
     )
     improve_propose.add_argument("run_id")
     improve_propose.add_argument(
         "--experimental",
         action="store_true",
         help=(
-            "Acknowledge that this is experimental candidate generation, not a "
-            "completed self-improvement loop."
+            "Acknowledge that this is an experimental structural review and "
+            "patch proposal; it does not evaluate or promote code."
         ),
     )
     improve_propose.add_argument("--model")
@@ -396,11 +402,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     improve_commands.add_parser(
         "list",
-        help="List retained experimental improvement runs.",
+        help="List retained experimental structural-review runs.",
     )
     improve_show = improve_commands.add_parser(
         "show",
-        help="Inspect one experimental improvement run without event bodies.",
+        help="Inspect one structural-review run without event bodies.",
     )
     improve_show.add_argument("run_id")
 
@@ -810,7 +816,7 @@ def dispatch_improve(args: argparse.Namespace, app: AgentWorkMemory) -> int:
             editable_paths=editable_paths,
         )
         run = app.improve_harness.prepare(request)
-        print(f"Prepared improvement run {run.run_id}.")
+        print(f"Prepared structural review run {run.run_id}.")
         print_improvement_run_summary(run)
         return 0
     if args.improve_command == "settings":
@@ -825,7 +831,7 @@ def dispatch_improve(args: argparse.Namespace, app: AgentWorkMemory) -> int:
             reasoning_effort=args.effort,
         )
         settings = config.improvement_proposer
-        print("Improvement proposer settings updated.")
+        print("Structural-review proposer settings updated.")
         print(f"model: {settings.model}")
         print(f"reasoning effort: {settings.reasoning_effort.value}")
         return 0
@@ -839,7 +845,7 @@ def dispatch_improve(args: argparse.Namespace, app: AgentWorkMemory) -> int:
                 allow_remote_content=args.allow_remote_content,
             )
         )
-        print(f"Proposed improvement candidate {candidate.candidate_id}.")
+        print(f"Proposed structural patch candidate {candidate.candidate_id}.")
         print(
             "changed: "
             + ", ".join(path.as_posix() for path in candidate.changed_paths)
@@ -848,7 +854,7 @@ def dispatch_improve(args: argparse.Namespace, app: AgentWorkMemory) -> int:
     if args.improve_command == "list":
         runs = app.improve_harness.list()
         if not runs:
-            print("No improvement runs.")
+            print("No structural-review runs.")
             return 0
         for run in runs:
             print(
@@ -889,8 +895,8 @@ def require_experimental_improvement_acknowledgement(
         and not args.experimental
     ):
         raise ValueError(
-            "awm improve prepare/propose is experimental candidate generation; "
-            "pass --experimental to acknowledge it"
+            "awm improve prepare/propose is an experimental structural review "
+            "and patch proposal; pass --experimental to acknowledge it"
         )
 
 
