@@ -2,6 +2,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from filelock import FileLock
 
 from agentworkmemory.app import create_app
 from agentworkmemory.cli import build_parser, dispatch
@@ -114,6 +115,25 @@ def test_vault_cli_status_and_sync(tmp_path: Path, capsys):
     assert "branch: main" in output
     assert "worktree: clean" in output
     assert "Committed, pulled, and pushed" in output
+
+
+def test_vault_sync_waits_for_transcript_sync_lock(tmp_path: Path):
+    adapter = FakeVaultRepositoryAdapter()
+    app = repository_app(tmp_path, adapter)
+    vault = app.vault.initialize(tmp_path / "vault")
+    app.vault_repository.sync_wait_seconds = 0
+
+    with (
+        FileLock(tmp_path / "state" / "sync.lock"),
+        pytest.raises(RuntimeError, match="waited for transcript sync"),
+    ):
+        app.vault_repository.sync("Do not race sync")
+
+    assert not any(
+        call[0] in {"commit_all", "pull_rebase", "push"}
+        for call in adapter.calls
+    )
+    assert vault.is_dir()
 
 
 def test_vault_push_refuses_an_oversized_file_before_staging(

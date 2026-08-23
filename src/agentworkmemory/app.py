@@ -192,6 +192,7 @@ def create_app(
         vault_repository_service,
         wiki,
         search,
+        resolved.state_dir / "sync.lock",
     )
     import_legacy = ImportLegacyAlmanacWorkflow(vault, wiki, search)
     synchronization = SynchronizationService(

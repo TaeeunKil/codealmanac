@@ -297,6 +297,11 @@ splits large retained sessions into numbered Markdown parts. Publication stops
 before staging if any Vault file still exceeds the 48 MiB safety limit; run a
 content sync to rebuild that session record before retrying.
 
+Vault Git operations use the same state-root synchronization lock as transcript
+collection. If `AWM Sync` is running, `awm vault sync` waits for it to finish
+before refreshing the Wiki/search views or touching Git, so the two operations do
+not race on SQLite or generated Vault files.
+
 ## Daily use
 
 ```powershell
